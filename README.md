@@ -1,7 +1,7 @@
 # vllm-gemma4-dflash-budget
 
 vLLM build that **actually enforces `thinking_token_budget`** while running
-Gemma 4 with DFlash speculative decoding on Blackwell-class GPUs
+Gemma 4 (and Qwen 3.6) with DFlash speculative decoding on Blackwell-class GPUs
 (sm_120 / sm_121a — DGX Spark GB10, GB200, …).
 
 ```
@@ -11,6 +11,21 @@ vllm/vllm-openai:v0.21.0          (PR #34668 — engine-level budget tracking)
 ```
 
 License: **Apache-2.0** (matches vLLM upstream).
+
+> **Works for Qwen 3.6 too.** Empirical cross-image test on DGX Spark
+> GB10 (2026-05-26) confirmed this image runs `Qwen/Qwen3.6-35B-A3B-FP8` +
+> DFlash drafter with equivalent inference to a dedicated Qwen-patched build:
+> identical budget gradient (10 → 30 chars; 1000 → ~3000 chars), identical
+> DFlash acceptance (~30%), identical native architecture detection
+> (`Qwen3_5MoeForConditionalGeneration`).
+>
+> Aeon-7's three Qwen-specific patches
+> (`register_qwen3_5_text`, `patch_mrope_text_fallback`, `patch_kv_cache_utils`)
+> were legacy backports for v0.18-era vLLM bases — v0.21.0 mainline includes
+> all three fixes natively. Only `patch_cudagraph_align` is needed (already
+> in this image). The companion repo
+> [`vllm-qwen3-dflash-budget`](https://github.com/davidzha712/vllm-qwen3-dflash-budget)
+> is now archival; use this image for both Gemma 4 and Qwen 3.6.
 
 ---
 
