@@ -1,0 +1,14 @@
+vllm-gemma4-dflash-budget
+Copyright 2026 David Zha
+
+This product includes software developed by the vLLM Project
+(https://github.com/vllm-project/vllm), licensed under Apache License 2.0.
+
+This product cherry-picks code from vLLM PR #41703
+("Gemma 4 DFlash batched verification") by its respective authors.
+
+This product includes a derivative of the CUDA-graph alignment patch
+originally published by the AEON-7 / Qwen3.6-NVFP4-DFlash project
+(https://github.com/AEON-7), licensed under Apache License 2.0.
+
+See ATTRIBUTIONS.md for detailed credits.

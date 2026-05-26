@@ -1,0 +1,33 @@
+# Build artifacts
+*.tar
+*.tar.gz
+build/
+dist/
+*.egg-info/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local secrets / env
+.env
+.env.*
+!.env.example
+secrets/
+
+# Local test outputs
+*.log
+test-results/

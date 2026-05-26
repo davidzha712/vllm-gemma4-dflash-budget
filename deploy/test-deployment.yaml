@@ -1,0 +1,119 @@
+# Example Kubernetes Deployment for verifying thinking_token_budget under
+# DFlash with this image. Tested on a single Blackwell node (DGX Spark GB10).
+#
+# ---------------------------------------------------------------------------
+# PLACEHOLDERS — replace before applying:
+#
+#   <REGISTRY>      e.g. ghcr.io/davidzha712   or   your-registry.local:5000
+#   <NODE_NAME>     the Blackwell node hostname (omit nodeSelector to skip)
+#   <MODELS_PATH>   absolute path on the node where weights live, OR replace
+#                   the hostPath volume with a PersistentVolumeClaim.
+#
+# The deployment expects Gemma 4 NVFP4 weights AND a DFlash drafter on disk:
+#   <MODELS_PATH>/gemma4-nvfp4/        — main model
+#   <MODELS_PATH>/gemma4-dflash/       — DFlash drafter weights
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemma4-dflash-budget
+  labels:
+    app: gemma4-dflash-budget
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gemma4-dflash-budget
+  template:
+    metadata:
+      labels:
+        app: gemma4-dflash-budget
+    spec:
+      runtimeClassName: nvidia
+      terminationGracePeriodSeconds: 60
+      # Pin to a specific Blackwell node — or delete this block to let the
+      # scheduler place the pod anywhere with an available NVIDIA GPU.
+      nodeSelector:
+        kubernetes.io/hostname: <NODE_NAME>
+      containers:
+        - name: vllm
+          image: <REGISTRY>/vllm-gemma4-dflash-budget:v0.21
+          imagePullPolicy: IfNotPresent
+          command: ["vllm"]
+          args:
+            - "serve"
+            - "/models/gemma4-nvfp4"
+            - "--port=8000"
+            - "--host=0.0.0.0"
+            - "--served-model-name=gemma4-dflash-budget"
+            - "--trust-remote-code"
+            - "--quantization=modelopt"
+            - "--max-model-len=16384"
+            - "--max-num-seqs=4"
+            - "--max-num-batched-tokens=16384"
+            - "--moe-backend=marlin"
+            - "--gpu-memory-utilization=0.45"
+            - "--enable-prefix-caching"
+            - "--enable-chunked-prefill"
+            - "--reasoning-parser=gemma4"
+            - "--scheduling-policy=priority"
+            - --limit-mm-per-prompt={"image":2,"audio":0}
+            - --speculative-config={"method":"dflash","model":"/models/gemma4-dflash","num_speculative_tokens":15}
+          env:
+            - {name: VLLM_TEST_FORCE_FP8_MARLIN, value: "1"}
+            - {name: VLLM_NVFP4_GEMM_BACKEND,    value: marlin}
+            - {name: VLLM_USE_FLASHINFER_MOE_FP4, value: "0"}
+            - {name: PYTORCH_CUDA_ALLOC_CONF,    value: "expandable_segments:True"}
+            - {name: VLLM_ALLOW_LONG_MAX_MODEL_LEN, value: "1"}
+            - {name: TORCH_CUDA_ARCH_LIST,       value: "12.0+PTX"}
+            - {name: OMP_NUM_THREADS,            value: "4"}
+            - {name: SAFETENSORS_FAST_GPU,       value: "1"}
+            - {name: VLLM_WORKER_MULTIPROC_METHOD, value: spawn}
+          ports:
+            - {name: http, containerPort: 8000}
+          volumeMounts:
+            - {name: models,         mountPath: /models, readOnly: true}
+            - {name: inductor-cache, mountPath: /root/.cache/vllm/torch_compile_cache}
+          resources:
+            limits:   {nvidia.com/gpu: 1, cpu: "4", memory: 32Gi}
+            requests: {nvidia.com/gpu: 1, cpu: "2", memory: 12Gi}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            failureThreshold: 90    # 90 * 10s = 15 min cold-start budget
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 30
+            failureThreshold: 4
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+      volumes:
+        # Option A — hostPath (single-node testing, what we used during dev):
+        - name: models
+          hostPath: {path: <MODELS_PATH>, type: Directory}
+        # Option B — PVC (production):
+        # - name: models
+        #   persistentVolumeClaim:
+        #     claimName: <YOUR_MODELS_PVC>
+        - name: inductor-cache
+          emptyDir: {sizeLimit: 8Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemma4-dflash-budget
+  labels:
+    app: gemma4-dflash-budget
+spec:
+  type: ClusterIP
+  selector: {app: gemma4-dflash-budget}
+  ports:
+    - {name: http, port: 8000, targetPort: http}
